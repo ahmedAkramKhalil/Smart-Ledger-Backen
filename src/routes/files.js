@@ -41,6 +41,10 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Accept-Charset', 'utf-8');
+  
+
     console.log(`📁 File: ${req.file.originalname}`);
     console.log(`💾 Saved to: ${req.file.path}`);
     console.log(`📊 Size: ${req.file.size} bytes`);
@@ -77,26 +81,19 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     } catch (claudeError) {
       console.error('❌ Claude error:', claudeError.message);
       
-      // Don't assume it's PDF - could be API key issue
-      if (claudeError.message.includes('401')) {
-        return res.status(500).json({
-          error: 'Claude API authentication failed',
-          details: 'Check your CLAUDE_API_KEY in .env file'
-        });
-      }
-      
-      if (claudeError.message.includes('Invalid request')) {
-        return res.status(400).json({
-          error: 'Claude API rejected the request',
-          details: 'File format or content issue'
+      // Better error handling
+      if (claudeError.message.includes('timeout')) {
+        return res.status(504).json({
+          error: 'Claude AI timed out - file too large',
+          details: 'Try a smaller file'
         });
       }
       
       return res.status(500).json({ 
-        error: claudeError.message
+        error: `Claude AI analysis failed: ${claudeError.message}`
       });
     }
-
+    
     if (!analysisResult.isFinancialData) {
       console.log('⚠️ Not financial data');
       return res.status(400).json({

@@ -1,26 +1,33 @@
-require('dotenv').config();
-const fs = require('fs');
+const Database = require('better-sqlite3');
 const path = require('path');
-const { run } = require('../src/config/database');
+const fs = require('fs');
 
-async function initializeDatabase() {
-  try {
-    console.log('Initializing database...');
-    const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
-    const statements = schema.split(';').filter(s => s.trim());
+function initializeDatabase() {
+  const dbDir = path.join(__dirname, '../data');
+  const dbPath = path.join(dbDir, 'smartledger.db');
 
-    for (const statement of statements) {
-      if (statement.trim()) {
-        await run(statement);
-      }
-    }
-
-    console.log('✓ Database initialized successfully');
-  } catch (error) {
-    console.error('Database initialization error:', error);
-    process.exit(1);
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
   }
+
+  console.log('🗄️ Initializing database at:', dbPath);
+  
+  // Remove old if exists
+  if (fs.existsSync(dbPath)) {
+    fs.unlinkSync(dbPath);
+  }
+
+  const db = new Database(dbPath);
+  db.pragma('foreign_keys = ON');
+
+  // Read and execute schema
+  const schemaPath = path.join(__dirname, 'schema.sql');
+  const schema = fs.readFileSync(schemaPath, 'utf8');
+  
+  db.exec(schema);
+  
+  console.log('✅ Database initialized\n');
+  return db;
 }
 
-initializeDatabase();
-
+module.exports = { initializeDatabase };

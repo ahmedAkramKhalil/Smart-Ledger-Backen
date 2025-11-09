@@ -1,26 +1,83 @@
 const { run, get, all } = require('../config/database');
 
+const { v4: uuidv4 } = require('uuid');
+
+
+const Database = require('better-sqlite3');
+const path = require('path');
+
+let db = null;
+
+function getDatabase() {
+  if (!db) {
+    const dbPath = path.join(__dirname, '../../data/smartledger.db');
+    db = new Database(dbPath);
+    db.pragma('foreign_keys = ON');
+  }
+  return db;
+}
+
 async function insertTransactions(transactions, uploadId) {
-  for (const txn of transactions) {
-    await run(`
+  try {
+    console.log(`💾 Storing ${transactions.length} transactions...`);
+
+    const db = getDatabase();
+
+    const processedTransactions = transactions.map((txn) => ({
+      id: uuidv4(),
+      uploadId,
+      date: txn.date || new Date().toISOString().split('T')[0],
+      description: txn.description || '',
+      amount: txn.amount || 0,
+      type: txn.type || 'DEBIT',
+      categoryCode: txn.categoryCode || 'UNCATEGORIZED_IN',
+      confidence: txn.confidence || 0.5,
+      reasoning: txn.reasoning || '',
+      counterparty: txn.counterparty || '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }));
+
+    const insertStmt = db.prepare(`
       INSERT INTO transactions (
         id, uploadId, date, description, amount, type, 
-        categoryCode, aiConfidence, counterparty, isManual
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      txn.id,
-      uploadId,
-      txn.date,
-      txn.description,
-      txn.amount,
-      txn.type,
-      txn.categoryCode || 'UNCATEGORIZED_IN',
-      txn.aiConfidence || 0.5,
-      txn.counterparty,
-      0
-    ]);
+        categoryCode, confidence, reasoning, counterparty,
+        createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const insertMany = db.transaction((txns) => {
+      txns.forEach((txn) => {
+        insertStmt.run(
+          txn.id, txn.uploadId, txn.date, txn.description, txn.amount,
+          txn.type, txn.categoryCode, txn.confidence, txn.reasoning,
+          txn.counterparty, txn.createdAt, txn.updatedAt
+        );
+      });
+    });
+
+    insertMany(processedTransactions);
+    console.log(`✅ Stored ${processedTransactions.length} transactions`);
+
+  } catch (error) {
+    console.error('❌ Error:', error.message);
+    throw error;
   }
 }
+
+async function getUploadHistory() {
+  try {
+    const db = getDatabase();
+    const stmt = db.prepare('SELECT * FROM uploads ORDER BY createdAt DESC');
+    return stmt.all();
+  } catch (error) {
+    console.error('❌ Error:', error.message);
+    throw error;
+  }
+}
+
+
+
 
 async function getTransactions(filters = {}) {
   let query = 'SELECT * FROM transactions WHERE 1=1';
@@ -144,9 +201,6 @@ async function getCategoryBreakdown(filters = {}) {
   return await all(query, params);
 }
 
-async function getUploadHistory() {
-  return await all('SELECT * FROM uploads ORDER BY createdAt DESC');
-}
 
 module.exports = {
   insertTransactions,

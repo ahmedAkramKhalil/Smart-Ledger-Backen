@@ -4,6 +4,16 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 
+
+const { initializeDatabase } = require('./../database/init');
+
+// Initialize database
+console.log('🗄️ Starting database initialization...');
+initializeDatabase();
+console.log('✅ Database ready\n');
+
+
+
 // Routes
 const authRoutes = require('./routes/auth');
 const transactionRoutes = require('./routes/transactions');

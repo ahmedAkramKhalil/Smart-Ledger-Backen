@@ -1,26 +1,24 @@
 CREATE TABLE IF NOT EXISTS transactions (
   id TEXT PRIMARY KEY,
-  uploadId TEXT,
+  uploadId TEXT NOT NULL,
   date TEXT NOT NULL,
-  description TEXT NOT NULL,
+  description TEXT,
   amount REAL NOT NULL,
   type TEXT NOT NULL CHECK(type IN ('CREDIT', 'DEBIT')),
-  categoryCode TEXT,
-  aiConfidence REAL DEFAULT 0.5,
+  categoryCode TEXT NOT NULL,
+  confidence REAL DEFAULT 0.5,
+  reasoning TEXT,
   counterparty TEXT,
-  notes TEXT,
-  isManual INTEGER DEFAULT 0,
-  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS uploads (
   id TEXT PRIMARY KEY,
   fileName TEXT NOT NULL,
-  fileType TEXT NOT NULL,
-  status TEXT DEFAULT 'pending',
-  transactionCount INTEGER,
-  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  transactionCount INTEGER DEFAULT 0,
+  status TEXT DEFAULT 'completed',
+  createdAt TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS categories (
