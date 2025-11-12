@@ -4,375 +4,187 @@ const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
 const CLAUDE_MODEL = 'claude-sonnet-4-20250514';
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
 
-const categories = {
-  credit: [
-    { code: 'INVOICE_PAYMENT_FULL', name: 'Invoice Payment (Full)' },
-    { code: 'INVOICE_PAYMENT_PARTIAL', name: 'Invoice Payment (Partial)' },
-    { code: 'CAPITAL_RAISE', name: 'Capital Raise' },
-    { code: 'INTEREST_INCOME', name: 'Interest Income' },
-    { code: 'EXPENSE_REFUND', name: 'Expense Refund' },
-    { code: 'LOAN_RECEIVED', name: 'Loan Received' },
-    { code: 'INTERCOMPANY_IN', name: 'Intercompany Transfer In' },
-    { code: 'ATM_DEPOSIT', name: 'ATM Deposit' },
-    { code: 'UNCATEGORIZED_IN', name: 'Uncategorized Income' }
-  ],
-  debit: [
-    { code: 'SUPPLIER_PAYMENT', name: 'Supplier Payment' },
-    { code: 'LOAN_REPAYMENT', name: 'Loan Repayment' },
-    { code: 'BANK_FEES', name: 'Bank Fees' },
-    { code: 'TAX_PAYMENT', name: 'Tax Payment' },
-    { code: 'PAYROLL', name: 'Payroll' },
-    { code: 'RENT', name: 'Rent Payment' },
-    { code: 'UTILITIES', name: 'Utilities' },
-    { code: 'ADMIN_EXPENSES', name: 'Admin Expenses' },
-    { code: 'ATM_WITHDRAWAL', name: 'ATM Withdrawal' }
-  ]
-};
-
-// Helper function to parse Claude responses with better error recovery
+// Parse Claude response
 function parseClaudeResponse(content) {
   try {
+    if (!content || typeof content !== 'string') {
+      throw new Error('Response is not a string');
+    }
+
     console.log('📄 Parsing response...');
-    console.log('   Response length:', content.length, 'characters');
-    
+    console.log(`   Length: ${content.length} chars`);
+
     // Remove markdown code blocks
     let cleanContent = content
       .replace(/```json\s*/g, '')
       .replace(/```\s*/g, '')
       .trim();
-    
-    console.log('   Clean content length:', cleanContent.length);
 
-    // Try direct parse first
+    console.log(`   Cleaned: ${cleanContent.length} chars`);
+
+    // Try direct parse
     try {
-      console.log('   Attempting direct JSON parse...');
       const result = JSON.parse(cleanContent);
-      console.log('   ✅ Direct parse successful');
+      console.log('✅ JSON parsed successfully');
       return result;
-    } catch (directError) {
-      console.log('   ⚠️ Direct parse failed, trying extraction and repair...');
-      
-      // Extract JSON object or array
-      const jsonMatch = cleanContent.match(/\{[\s\S]*$|\[[\s\S]*$/);
-      if (!jsonMatch) {
-        console.error('   ❌ No JSON structure found');
-        throw new Error('No JSON found in response');
+    } catch (parseError) {
+      console.log('⚠️ Direct parse failed, extracting...');
+
+      // Extract JSON object
+      const match = cleanContent.match(/\{[\s\S]*\}/);
+      if (!match) {
+        throw new Error('No JSON object found');
       }
-      
-      let jsonStr = jsonMatch[0];
-      
-      // Repair truncated JSON
-      jsonStr = repairTruncatedJSON(jsonStr);
-      
-      console.log('   Parsing repaired JSON...');
+
+      let jsonStr = match;
+
+      // Repair if truncated
+      const openBraces = (jsonStr.match(/\{/g) || []).length;
+      const closeBraces = (jsonStr.match(/\}/g) || []).length;
+      if (openBraces > closeBraces) {
+        jsonStr += '\n}'.repeat(openBraces - closeBraces);
+      }
+
       const result = JSON.parse(jsonStr);
-      console.log('   ✅ Repaired JSON parse successful');
+      console.log('✅ Extracted JSON parsed');
       return result;
     }
-    
   } catch (error) {
-    console.error('❌ Failed to parse Claude response');
-    console.error('   Error:', error.message);
-    console.error('   First 500 chars:', content.substring(0, 500));
-    console.error('   Last 500 chars:', content.substring(content.length - 500));
-    throw new Error(`Claude returned invalid JSON format: ${error.message}`);
+    console.error('❌ Parse error:', error.message);
+    throw error;
   }
 }
 
-// Repair truncated JSON by completing structures
-function repairTruncatedJSON(jsonStr) {
-  console.log('   🔧 Repairing truncated JSON...');
-  
-  // Remove incomplete last element if in array
-  if (jsonStr.includes('"transactions": [')) {
-    // Find last complete transaction object
-    const lastCompleteMatch = jsonStr.lastIndexOf('    }');
-    if (lastCompleteMatch > 0) {
-      // Truncate to last complete object
-      jsonStr = jsonStr.substring(0, lastCompleteMatch + 5);
-      console.log('   Truncated to last complete transaction');
-    }
-  }
-  
-  // Count and balance brackets
-  const openBraces = (jsonStr.match(/\{/g) || []).length;
-  const closeBraces = (jsonStr.match(/\}/g) || []).length;
-  const openBrackets = (jsonStr.match(/\[/g) || []).length;
-  const closeBrackets = (jsonStr.match(/\]/g) || []).length;
-  
-  console.log('   Brackets: { open:', openBraces, 'close:', closeBraces, '} [ open:', openBrackets, 'close:', closeBrackets, ']');
-  
-  // Close arrays first
-  if (openBrackets > closeBrackets) {
-    jsonStr += '\n  ]'.repeat(openBrackets - closeBrackets);
-    console.log('   Added', openBrackets - closeBrackets, 'closing brackets');
-  }
-  
-  // Then close objects
-  if (openBraces > closeBraces) {
-    jsonStr += '\n}'.repeat(openBraces - closeBraces);
-    console.log('   Added', openBraces - closeBraces, 'closing braces');
-  }
-  
-  return jsonStr;
-}
-
-// Analyze raw data with Claude AI - Process only 20% of file
+// Analyze bank statement
 async function analyzeRawData(rawData) {
-  if (!CLAUDE_API_KEY) throw new Error('CLAUDE_API_KEY missing');
-  if (!rawData || rawData.trim().length === 0) throw new Error('No data provided');
+  try {
+    // Validate
+    if (!CLAUDE_API_KEY) {
+      throw new Error('CLAUDE_API_KEY not set');
+    }
 
-  // Take only first 20% of data (max 20KB for faster processing)
-  const dataSize = Math.min(Math.floor(rawData.length * 0.2), 20000);
-  let cleanData = rawData.substring(0, dataSize);
-  
-  console.log('📊 Original data size:', rawData.length, 'characters');
-  console.log('📊 Analyzing 20% of data:', cleanData.length, 'characters');
+    if (!rawData || typeof rawData !== 'string' || rawData.trim().length === 0) {
+      throw new Error('Invalid input data');
+    }
 
-  const prompt = `You are an expert financial data extraction AI for Greek business banking systems.
+    // Take 20%
+    const totalLength = rawData.length;
+    const twentyPercent = Math.floor(totalLength * 0.2);
+    const sampleData = rawData.substring(0, twentyPercent).trim();
 
-YOUR TASK:
-Extract UP TO 50 financial transactions from the provided bank statement data and categorize each one.
-IMPORTANT: Keep Greek text unchanged in descriptions.
+    console.log(`📊 File: ${totalLength} bytes`);
+    console.log(`📊 Sample: ${sampleData.length} bytes (20%)`);
 
-CATEGORIZATION RULES:
+    // Prompt
+    const prompt = `Extract up to 50 transactions from this bank statement.
 
-CREDIT CATEGORIES (Money IN - Positive amounts):
-- INVOICE_PAYMENT_FULL: Client paid full invoice amount
-- INVOICE_PAYMENT_PARTIAL: Client paid partial invoice amount
-- CAPITAL_RAISE: Investment, equity funding, capital injection
-- INTEREST_INCOME: Bank interest earned
-- EXPENSE_REFUND: Refund for previous expense/purchase
-- LOAN_RECEIVED: Loan funds received
-- INTERCOMPANY_IN: Transfer from related company/branch
-- ATM_DEPOSIT: Cash deposit via ATM
-- UNCATEGORIZED_IN: Other income not fitting above
+DATA:
+${sampleData}
 
-DEBIT CATEGORIES (Money OUT - Negative amounts):
-- SUPPLIER_PAYMENT: Payment to vendors/suppliers
-- LOAN_REPAYMENT: Loan installment or repayment
-- BANK_FEES: Bank charges, transaction fees
-- TAX_PAYMENT: VAT, income tax, any tax payment
-- PAYROLL: Salary, wages, employee payments
-- RENT: Office/building rent payment
-- UTILITIES: Electricity, water, internet, phone
-- ADMIN_EXPENSES: Office supplies, misc admin costs
-- ATM_WITHDRAWAL: Cash withdrawal via ATM
+Return ONLY this JSON - NO explanations:
 
-EXTRACTION RULES:
-1. Extract UP TO 50 transactions (not more to avoid token limits)
-2. Detect dates in ANY format (DD/MM/YYYY, YYYY-MM-DD, DD-MM-YYYY, etc.)
-3. Identify amounts (numbers with . or , as decimals)
-4. Determine transaction type:
-   - CREDIT: money coming IN (deposits, payments received, income)
-   - DEBIT: money going OUT (payments, withdrawals, expenses)
-5. Use context clues in description to assign correct category
-6. Keep Greek and English text unchanged in descriptions
-7. Generate sequential IDs: txn_001, txn_002, etc.
-
-BANK STATEMENT DATA:
-${cleanData}
-
-REQUIRED OUTPUT FORMAT (ONLY VALID JSON, NO OTHER TEXT):
 {
   "isFinancialData": true,
-  "analysis": "Found X transactions from sample data",
+  "account": {
+    "accountNumber": "GR1234567890",
+    "accountName": "Account",
+    "currency": "EUR"
+  },
   "transactions": [
     {
       "id": "txn_001",
       "date": "2025-11-08",
-      "description": "Original transaction description",
-      "amount": 2500.00,
+      "description": "Transaction",
+      "amount": 1000,
       "type": "CREDIT",
       "categoryCode": "INVOICE_PAYMENT_FULL",
-      "confidence": 0.95,
-      "reasoning": "Brief reason"
+      "confidence": 0.9
     }
   ],
   "summary": {
-    "totalTransactions": 50,
-    "creditTotal": 45000.00,
-    "debitTotal": 32000.00,
-    "netCashFlow": 13000.00
+    "totalTransactions": 1,
+    "creditTotal": 1000,
+    "debitTotal": 0,
+    "netCashFlow": 1000
   }
-}
+}`;
 
-CRITICAL RULES:
-1. Return ONLY the JSON object - no explanations, no markdown
-2. Maximum 50 transactions to avoid incomplete JSON
-3. Complete ALL JSON structures properly before stopping
-4. If you cannot finish all transactions, stop at a complete transaction object`;
+    console.log('📨 Calling Claude...');
 
-  try {
-    console.log('🤖 Sending to Claude AI for analysis...');
-    
-    const response = await axios.post(CLAUDE_API_URL, {
-      model: CLAUDE_MODEL,
-      max_tokens: 16000, // Increased to handle larger responses
-      temperature: 0.3, // Lower temperature for more consistent JSON
-      messages: [{
-        role: 'user',
-        content: prompt
-      }]
-    }, {
-      headers: {
-        'x-api-key': CLAUDE_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json'
-      },
-      timeout: 120000
-    });
-
-    const content = response.data.content[0].text;
-    console.log('📥 Received response from Claude');
-    
-    const result = parseClaudeResponse(content);
-    
-    // Validate result structure
-    if (!result.isFinancialData) {
-      console.log('⚠️ Not financial data:', result.analysis);
-      return result;
-    }
-
-    // Validate transactions
-    if (!Array.isArray(result.transactions)) {
-      throw new Error('Invalid response: transactions must be an array');
-    }
-
-    console.log('✅ Claude AI Analysis Complete');
-    console.log(`📊 Extracted ${result.transactions.length} transactions`);
-    console.log(`💰 Credits: €${result.summary?.creditTotal || 0}`);
-    console.log(`💸 Debits: €${result.summary?.debitTotal || 0}`);
-    console.log(`📈 Net Cash Flow: €${result.summary?.netCashFlow || 0}`);
-    
-    return result;
-
-  } catch (error) {
-    if (error.response) {
-      console.error('❌ Claude API Error:', error.response.data);
-      throw new Error(`Claude API Error: ${error.response.data.error?.message || 'Unknown error'}`);
-    } else if (error.request) {
-      console.error('❌ No response from Claude API');
-      throw new Error('Network error: Could not reach Claude API');
-    } else {
-      console.error('❌ Error:', error.message);
-      throw error;
-    }
-  }
-}
-
-// Categorize pre-structured transactions
-async function categorizeTransactions(transactions) {
-  if (!CLAUDE_API_KEY) {
-    throw new Error('CLAUDE_API_KEY not configured');
-  }
-
-  if (!Array.isArray(transactions) || transactions.length === 0) {
-    throw new Error('No transactions to categorize');
-  }
-
-  // Process in batches of 20 to avoid token limits
-  const batchSize = 20;
-  const batches = [];
-  
-  for (let i = 0; i < transactions.length; i += batchSize) {
-    batches.push(transactions.slice(i, i + batchSize));
-  }
-
-  console.log(`🔄 Processing ${transactions.length} transactions in ${batches.length} batches`);
-
-  const allCategorizations = [];
-
-  for (let i = 0; i < batches.length; i++) {
-    const batch = batches[i];
-    console.log(`🤖 Categorizing batch ${i + 1}/${batches.length} (${batch.length} transactions)...`);
-
-    const prompt = `You are a financial categorization expert for Greek business banking.
-
-CATEGORIZE each transaction into ONE category:
-
-CREDIT CATEGORIES (Money IN):
-${categories.credit.map(c => `- ${c.code}: ${c.name}`).join('\n')}
-
-DEBIT CATEGORIES (Money OUT):
-${categories.debit.map(c => `- ${c.code}: ${c.name}`).join('\n')}
-
-CATEGORIZATION GUIDELINES:
-- INVOICE_PAYMENT: Look for client names, invoice references, payment terms
-- SUPPLIER_PAYMENT: Look for vendor names, purchase orders
-- PAYROLL: Look for employee names, salary terms
-- TAX_PAYMENT: Look for tax office, VAT, ΦΠΑ, EFKA
-- BANK_FEES: Look for commission, charges, fees
-- RENT: Look for landlord, rent, lease
-
-TRANSACTIONS TO CATEGORIZE:
-${JSON.stringify(batch, null, 2)}
-
-REQUIRED OUTPUT (ONLY VALID JSON ARRAY):
-[
-  {
-    "id": "transaction_id_from_input",
-    "categoryCode": "EXACT_CATEGORY_CODE",
-    "confidence": 0.95,
-    "reasoning": "Brief explanation"
-  }
-]
-
-CRITICAL: Return ONLY the JSON array. No markdown, no explanations.`;
-
-    try {
-      const response = await axios.post(CLAUDE_API_URL, {
+    // Call Claude
+    const response = await axios.post(
+      CLAUDE_API_URL,
+      {
         model: CLAUDE_MODEL,
-        max_tokens: 4000,
+        max_tokens: 4096,
         temperature: 0.3,
-        messages: [{
-          role: 'user',
-          content: prompt
-        }]
-      }, {
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ]
+      },
+      {
         headers: {
           'x-api-key': CLAUDE_API_KEY,
           'anthropic-version': '2023-06-01',
           'content-type': 'application/json'
-        }
-      });
-
-      const content = response.data.content[0].text;
-      const categorizations = parseClaudeResponse(content);
-      
-      // Validate result
-      if (!Array.isArray(categorizations)) {
-        throw new Error('Invalid response: expected array of categorizations');
+        },
+        timeout: 60000
       }
+    );
 
-      // Validate each categorization
-      const allCodes = [...categories.credit, ...categories.debit].map(c => c.code);
-      categorizations.forEach((cat, index) => {
-        if (!cat.id || !cat.categoryCode) {
-          throw new Error(`Invalid categorization at index ${index}: missing id or categoryCode`);
-        }
-        
-        if (!allCodes.includes(cat.categoryCode)) {
-          console.warn(`⚠️ Unknown category code: ${cat.categoryCode} for transaction ${cat.id}`);
-        }
-      });
+    console.log('✅ Got response from Claude');
 
-      allCategorizations.push(...categorizations);
-      console.log(`✅ Batch ${i + 1} complete: ${categorizations.length} categorized`);
-
-    } catch (error) {
-      console.error(`❌ Batch ${i + 1} failed:`, error.message);
-      throw error;
+    // FIXED: Check response structure correctly
+    if (!response || !response.data) {
+      throw new Error('No response data');
     }
-  }
 
-  console.log(`✅ All categorization complete: ${allCategorizations.length} transactions`);
-  return allCategorizations;
+    if (!response.data.content || !Array.isArray(response.data.content)) {
+      throw new Error('Invalid content structure');
+    }
+
+    if (response.data.content.length === 0) {
+      throw new Error('Empty content array');
+    }
+
+    if (!response.data.content.text) {
+      throw new Error('No text in content');
+    }
+
+    const content = response.data.content.text;
+    console.log(`✅ Received text: ${content.length} chars`);
+    console.log(`   First 100: ${content.substring(0, 100)}`);
+
+    // Parse
+    const result = parseClaudeResponse(content);
+
+    // Validate
+    if (!result.isFinancialData) {
+      console.log('⚠️ Not financial data');
+      return result;
+    }
+
+    if (!Array.isArray(result.transactions)) {
+      throw new Error('Transactions not array');
+    }
+
+    console.log(`✅ Success: ${result.transactions.length} transactions`);
+    return result;
+
+  } catch (error) {
+    console.error('❌ Claude error:', error.message);
+
+    if (error.response && error.response.data) {
+      console.error('API error:', error.response.data);
+    }
+
+    throw new Error(`Claude failed: ${error.message}`);
+  }
 }
 
 module.exports = {
-  analyzeRawData,
-  categorizeTransactions,
-  categories,
-  CLAUDE_MODEL
+  analyzeRawData
 };

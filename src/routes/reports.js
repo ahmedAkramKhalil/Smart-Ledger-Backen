@@ -1,26 +1,134 @@
 const express = require('express');
 const router = express.Router();
-const { getReportSummary, getCategoryBreakdown } = require('../services/transactionService');
+const {
+  getIncomeExpensesSummary,
+  getCashFlowReport,
+  getCategoryAnalysis,
+  getTopTransactions,
+  getReconciliationStatus,
+  getMonthlyComparison,
+  getDashboardSummary
+} = require('../services/reportService');
+const {
+  detectRecurringTransactions,
+  analyzeTransactionPatterns,
+  forecastCashFlow,
+  predictNextTransaction
+} = require('../services/analyticsService');
 
-router.get('/summary', async (req, res) => {
+// Income & Expenses
+router.get('/income-expenses', async (req, res) => {
   try {
-    const { dateFrom, dateTo } = req.query;
-    const summary = await getReportSummary({ dateFrom, dateTo });
-    res.json(summary);
+    const data = await getIncomeExpensesSummary(req.query);
+    res.json(data);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-router.get('/breakdown', async (req, res) => {
+// Cash Flow
+router.get('/cash-flow', async (req, res) => {
   try {
-    const { dateFrom, dateTo } = req.query;
-    const breakdown = await getCategoryBreakdown({ dateFrom, dateTo });
-    res.json(breakdown);
+    const data = await getCashFlowReport(req.query);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Category Analysis
+router.get('/category-analysis', async (req, res) => {
+  try {
+    const data = await getCategoryAnalysis();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Top Transactions
+router.get('/top-transactions', async (req, res) => {
+  try {
+    const limit = req.query.limit || 10;
+    const type = req.query.type || null;
+    const data = await getTopTransactions(limit, type);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reconciliation Status
+router.get('/reconciliation-status', async (req, res) => {
+  try {
+    const data = await getReconciliationStatus(req.query.accountId);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Monthly Comparison
+router.get('/monthly-comparison', async (req, res) => {
+  try {
+    const year = req.query.year || new Date().getFullYear();
+    const data = await getMonthlyComparison(year);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Dashboard Summary
+router.get('/dashboard', async (req, res) => {
+  try {
+    const data = await getDashboardSummary(req.query.accountId);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Recurring Transactions
+router.get('/recurring', async (req, res) => {
+  try {
+    const minOccurrences = req.query.minOccurrences || 3;
+    const data = await detectRecurringTransactions(minOccurrences);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Transaction Patterns
+router.get('/patterns/:categoryCode', async (req, res) => {
+  try {
+    const data = await analyzeTransactionPatterns(req.params.categoryCode);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Cash Flow Forecast
+router.get('/forecast/cash-flow', async (req, res) => {
+  try {
+    const months = req.query.months || 3;
+    const data = await forecastCashFlow(months);
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Predict Transaction
+router.get('/predictions/:categoryCode', async (req, res) => {
+  try {
+    const data = await predictNextTransaction(req.params.categoryCode);
+    res.json(data);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 module.exports = router;
-

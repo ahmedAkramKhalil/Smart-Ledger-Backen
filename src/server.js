@@ -1,6 +1,9 @@
+const cors = require('cors');
+
+
+
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 
@@ -13,6 +16,14 @@ initializeDatabase();
 console.log('✅ Database ready\n');
 
 
+const accountsRouter = require('./routes/accounts');
+
+// Register routes
+
+
+const reportsRouter = require('./routes/reports');
+
+// Register routes
 
 // Routes
 const authRoutes = require('./routes/auth');
@@ -26,6 +37,24 @@ const exportRoutes = require('./routes/export');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+app.use('/api/accounts', accountsRouter);
+app.use('/api/reports', reportsRouter);
+
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:5000',
+    'http://127.0.0.1:5000',
+    'http://localhost:8080',
+    'http://127.0.0.1:8080'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+app.options('*', cors());
 // Middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
