@@ -1,14 +1,24 @@
-const { getDatabase } = require('./transactionService');
-const { updateAccountBalance } = require('./accountService');
 const { v4: uuidv4 } = require('uuid');
+const Database = require('better-sqlite3');
+const path = require('path');
+
+// Local database instance to avoid circular dependencies
+let db = null;
+
+function getDatabase() {
+  if (!db) {
+    const dbPath = path.join(__dirname, '../../data/smartledger.db');
+    db = new Database(dbPath);
+    db.pragma('foreign_keys = ON');
+  }
+  return db;
+}
 
 // Create ledger entry from transaction
 async function createLedgerEntry(transaction, accountId) {
   try {
     const db = getDatabase();
     
-    console.log(`📝 Creating ledger entry for transaction: ${transaction.id}`);
-
     // Get last entry balance
     const lastEntry = db.prepare(`
       SELECT running_balance 
@@ -21,7 +31,7 @@ async function createLedgerEntry(transaction, accountId) {
     const previousBalance = lastEntry?.running_balance || 0;
     
     // Calculate new balance
-    const amount = Math.abs(parseFloat(transaction.amount));
+    const amount = Math.abs(parseFloat(transaction.amount) || 0);
     const entryType = transaction.type; // 'CREDIT' or 'DEBIT'
     
     const newBalance = entryType === 'CREDIT' 
@@ -36,12 +46,13 @@ async function createLedgerEntry(transaction, accountId) {
       entry_type: entryType,
       amount: amount,
       running_balance: newBalance,
-      description: transaction.description,
+      description: (transaction.description || '').substring(0, 500),
       reconciled: 0,
-      notes: transaction.reasoning || '',
+      notes: (transaction.reasoning || '').substring(0, 1000),
       created_at: new Date().toISOString()
     };
 
+    // Insert ledger entry
     const stmt = db.prepare(`
       INSERT INTO ledger_entries (
         id, account_id, transaction_id, entry_date, 
@@ -64,13 +75,45 @@ async function createLedgerEntry(transaction, accountId) {
     );
 
     // Update account balance
-    await updateAccountBalance(accountId);
+    updateAccountBalanceSync(accountId);
 
-    console.log('✅ Ledger entry created:', entry.id);
     return entry;
   } catch (error) {
     console.error('❌ Error creating ledger entry:', error.message);
     throw error;
+  }
+}
+
+// Update account balance (synchronous version to avoid circular dependency)
+function updateAccountBalanceSync(accountId) {
+  try {
+    const db = getDatabase();
+    
+    const balance = db.prepare(`
+      SELECT COALESCE(SUM(
+        CASE 
+          WHEN entry_type = 'CREDIT' THEN amount 
+          WHEN entry_type = 'DEBIT' THEN -amount 
+        END
+      ), 0) as current_balance
+      FROM ledger_entries
+      WHERE account_id = ?
+    `).get(accountId);
+
+    db.prepare(`
+      UPDATE accounts 
+      SET current_balance = ?, updated_at = ?
+      WHERE id = ?
+    `).run(
+      balance.current_balance,
+      new Date().toISOString(),
+      accountId
+    );
+
+    return balance.current_balance;
+  } catch (error) {
+    console.warn('⚠️ Could not update account balance:', error.message);
+    return 0;
   }
 }
 
@@ -107,7 +150,7 @@ async function getAccountLedger(accountId, dateFrom = null, dateTo = null) {
     return ledger;
   } catch (error) {
     console.error('❌ Error fetching ledger:', error.message);
-    throw error;
+    return [];
   }
 }
 
@@ -170,7 +213,15 @@ async function getAccountSummary(accountId, dateFrom = null, dateTo = null) {
     };
   } catch (error) {
     console.error('❌ Error getting summary:', error.message);
-    throw error;
+    return {
+      account_id: accountId,
+      total_credits: 0,
+      total_debits: 0,
+      net_flow: 0,
+      total_entries: 0,
+      reconciled_entries: 0,
+      final_balance: 0
+    };
   }
 }
 
@@ -180,4 +231,3 @@ module.exports = {
   reconcileLedgerEntry,
   getAccountSummary
 };
-

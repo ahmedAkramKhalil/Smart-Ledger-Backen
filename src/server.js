@@ -1,112 +1,110 @@
-const cors = require('cors');
-
-
-
 require('dotenv').config();
 const express = require('express');
+const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 
+const app = express();
+const PORT = process.env.PORT || 5001;
 
-const { initializeDatabase } = require('./../database/init');
+// ========================================
+// CORS - MUST BE FIRST
+// ========================================
+app.use(cors({
+  origin: '*',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin']
+}));
 
-// Initialize database
-console.log('🗄️ Starting database initialization...');
-initializeDatabase();
-console.log('✅ Database ready\n');
+app.options('*', cors());
 
+// ========================================
+// REQUEST LOGGING
+// ========================================
+app.use((req, res, next) => {
+  console.log(`📨 ${req.method} ${req.url}`);
+  next();
+});
 
-const accountsRouter = require('./routes/accounts');
+// ========================================
+// BODY PARSERS
+// ========================================
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// Register routes
+// ========================================
+// CREATE DIRECTORIES
+// ========================================
+const uploadDir = process.env.UPLOAD_DIR || './uploads';
+const dataDir = './data';
+[uploadDir, dataDir].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`✅ Created directory: ${dir}`);
+  }
+});
 
-
-const reportsRouter = require('./routes/reports');
-
-// Register routes
-
-// Routes
+// ========================================
+// ROUTES
+// ========================================
 const authRoutes = require('./routes/auth');
 const transactionRoutes = require('./routes/transactions');
 const fileRoutes = require('./routes/files');
 const categoryRoutes = require('./routes/categories');
 const reportRoutes = require('./routes/reports');
 const exportRoutes = require('./routes/export');
+const accountsRouter = require('./routes/accounts');
 
-// Initialize app
-const app = express();
-const PORT = process.env.PORT || 5000;
-
-app.use('/api/accounts', accountsRouter);
-app.use('/api/reports', reportsRouter);
-
-app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:5000',
-    'http://127.0.0.1:5000',
-    'http://localhost:8080',
-    'http://127.0.0.1:8080'
-  ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-app.options('*', cors());
-// Middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
-app.use(cors({
-  origin: process.env.CORS_ORIGINS?.split(',') || 'http://localhost:3000',
-  credentials: true
-}));
-
-// Create directories if they don't exist
-const uploadDir = process.env.UPLOAD_DIR || './uploads';
-const dataDir = './data';
-[uploadDir, dataDir].forEach(dir => {
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-});
-
-// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/export', exportRoutes);
+app.use('/api/accounts', accountsRouter);
 
-// Health check
+// ========================================
+// HEALTH CHECK
+// ========================================
 app.get('/api/health', (req, res) => {
+  console.log('✅ Health check');
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
-// Error handling middleware
+// ========================================
+// ERROR HANDLING
+// ========================================
 app.use((err, req, res, next) => {
-  console.error('Error:', err);
+  console.error('❌ Error:', err.message);
   res.status(err.status || 500).json({
     error: err.message || 'Internal Server Error',
     status: err.status || 500
   });
 });
 
-// 404 handler
+// ========================================
+// 404 HANDLER
+// ========================================
 app.use((req, res) => {
+  console.log('❌ 404:', req.url);
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`✓ Smart Ledger AI Backend running on port ${PORT}`);
+// ========================================
+// START SERVER
+// ========================================
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('\n🚀 Smart Ledger AI Backend');
+  console.log('================================');
+  console.log(`✓ Port: ${PORT}`);
   console.log(`✓ Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`✓ API Base: http://localhost:${PORT}/api`);
+  console.log(`✓ Local: http://localhost:${PORT}/api`);
+  console.log(`✓ Network: http://127.0.0.1:${PORT}/api`);
+  console.log(`✓ CORS: Enabled for all origins`);
+  console.log('================================\n');
 });
-

@@ -17,8 +17,8 @@ async function getIncomeExpensesSummary(filters = {}) {
         AVG(t.confidence) as avg_confidence,
         MIN(t.date) as first_date,
         MAX(t.date) as last_date
-      FROM categories c
-      LEFT JOIN transactions t ON c.code = t.category_code
+        FROM categories c
+        LEFT JOIN transactions t ON c.code = t.categoryCode 
       WHERE 1=1
     `;
     const params = [];
@@ -61,9 +61,9 @@ async function getCashFlowReport(filters = {}) {
     
     let query = `
       SELECT 
-        strftime('%Y-%m', t.date) as period,
-        strftime('%Y', t.date) as year,
-        strftime('%m', t.date) as month,
+        substr(t.date, 1, 7) as period,
+        substr(t.date, 1, 4) as year,
+        substr(t.date, 6, 2) as month,
         SUM(CASE WHEN t.type = 'CREDIT' THEN t.amount ELSE 0 END) as total_income,
         SUM(CASE WHEN t.type = 'DEBIT' THEN t.amount ELSE 0 END) as total_expenses,
         SUM(CASE WHEN t.type = 'CREDIT' THEN t.amount ELSE -t.amount END) as net_cash_flow,
@@ -89,14 +89,14 @@ async function getCashFlowReport(filters = {}) {
       params.push(filters.accountId);
     }
 
-    query += ' GROUP BY strftime("%Y-%m", t.date) ORDER BY period DESC';
+    query += ' GROUP BY substr(t.date, 1, 7) ORDER BY period DESC';
 
     const data = db.prepare(query).all(...params);
     console.log(`✅ Retrieved ${data.length} cash flow periods`);
     return data;
   } catch (error) {
     console.error('❌ Error in getCashFlowReport:', error.message);
-    throw error;
+    return [];  // Return empty array instead of throwing
   }
 }
 
@@ -149,7 +149,7 @@ async function getTopTransactions(limit = 10, type = null) {
         t.counterparty,
         t.confidence
       FROM transactions t
-      LEFT JOIN categories c ON t.category_code = c.code
+      LEFT JOIN categories c ON t.categoryCode = c.code
       WHERE 1=1
     `;
     const params = [];
@@ -212,17 +212,29 @@ async function getMonthlyComparison(year = null) {
     
     const query = `
       SELECT 
-        strftime('%m', t.date) as month,
-        strftime('%B', t.date) as month_name,
+        substr(t.date, 6, 2) as month,
+        CASE substr(t.date, 6, 2)
+          WHEN '01' THEN 'January'
+          WHEN '02' THEN 'February'
+          WHEN '03' THEN 'March'
+          WHEN '04' THEN 'April'
+          WHEN '05' THEN 'May'
+          WHEN '06' THEN 'June'
+          WHEN '07' THEN 'July'
+          WHEN '08' THEN 'August'
+          WHEN '09' THEN 'September'
+          WHEN '10' THEN 'October'
+          WHEN '11' THEN 'November'
+          WHEN '12' THEN 'December'
+        END as month_name,
         t.type,
         SUM(t.amount) as total_amount,
         COUNT(t.id) as transaction_count
       FROM transactions t
-      WHERE strftime('%Y', t.date) = ?
-      GROUP BY strftime('%m', t.date), t.type
+      WHERE substr(t.date, 1, 4) = ?
+      GROUP BY substr(t.date, 6, 2), t.type
       ORDER BY month ASC
     `;
-
     const data = db.prepare(query).all(currentYear.toString());
     console.log(`✅ Retrieved monthly comparison for ${currentYear}`);
     return data;

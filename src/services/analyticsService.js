@@ -9,7 +9,7 @@ async function detectRecurringTransactions(minOccurrences = 3) {
     const query = `
       SELECT 
         t.description,
-        t.category_code,
+        t.categoryCode,
         c.name_en as category_name,
         t.type,
         COUNT(*) as occurrence_count,
@@ -19,8 +19,8 @@ async function detectRecurringTransactions(minOccurrences = 3) {
         MIN(t.date) as first_date,
         MAX(t.date) as last_date
       FROM transactions t
-      LEFT JOIN categories c ON t.category_code = c.code
-      GROUP BY t.description, t.category_code, t.type
+      LEFT JOIN categories c ON t.categoryCode = c.code
+      GROUP BY t.description, t.categoryCode, t.type
       HAVING occurrence_count >= ?
       ORDER BY occurrence_count DESC
     `;
@@ -41,15 +41,15 @@ async function analyzeTransactionPatterns(categoryCode) {
     
     const query = `
       SELECT 
-        strftime('%Y-%m', t.date) as period,
+        substr(t.date, 1, 7) as period,
         COUNT(*) as transaction_count,
         AVG(t.amount) as avg_amount,
         SUM(t.amount) as total_amount,
         MIN(t.amount) as min_amount,
         MAX(t.amount) as max_amount
       FROM transactions t
-      WHERE t.category_code = ?
-      GROUP BY strftime('%Y-%m', t.date)
+      WHERE t.categoryCode = ?
+      GROUP BY substr(t.date, 1, 7)
       ORDER BY period DESC
       LIMIT 12
     `;
@@ -72,15 +72,21 @@ async function getAveragesByCategory(categoryCode, period = 'monthly') {
     if (period === 'daily') timeFormat = '%Y-%m-%d';
     if (period === 'yearly') timeFormat = '%Y';
 
+// Use substr instead of strftime
+    let dateExtract;
+    if (period === 'daily') dateExtract = 't.date'; // Full date
+    else if (period === 'yearly') dateExtract = 'substr(t.date, 1, 4)';
+    else dateExtract = 'substr(t.date, 1, 7)'; // monthly
+
     const query = `
       SELECT 
-        strftime('${timeFormat}', t.date) as period,
+        ${dateExtract} as period,
         AVG(t.amount) as avg_amount,
         COUNT(*) as transaction_count,
         SUM(t.amount) as total_amount
       FROM transactions t
-      WHERE t.category_code = ?
-      GROUP BY strftime('${timeFormat}', t.date)
+      WHERE t.categoryCode = ?
+      GROUP BY ${dateExtract}
       ORDER BY period DESC
     `;
 

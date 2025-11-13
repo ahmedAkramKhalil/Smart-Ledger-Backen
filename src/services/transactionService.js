@@ -32,37 +32,48 @@ async function insertTransactions(transactions, uploadId, accountInfo = {}) {
     // Step 1: Get or Create Account
     console.log('📋 Processing account information...');
     let accountId = 'acc_default_001';
+
+// Validate account info
+const accountNumber = (accountInfo.accountNumber || '').trim();
+
+if (accountNumber && accountNumber !== 'UNKNOWN' && accountNumber !== '') {
+  // Check if account exists by account number
+  const existingAccount = db.prepare(
+    'SELECT id FROM accounts WHERE account_number = ?'
+  ).get(accountNumber);
+  
+  if (existingAccount) {
+    accountId = existingAccount.id;
+    console.log(`✅ Account found: ${accountId} (${accountNumber})`);
+  } else {
+    // Create new account
+    accountId = `acc_${Date.now()}`;
+    console.log(`✨ Creating new account: ${accountId} (${accountNumber})`);
     
-    if (accountInfo && accountInfo.accountNumber) {
-      const accountNumber = accountInfo.accountNumber.trim();
-      
-      // Check if account exists by account number
-      const existingAccount = db.prepare(
-        'SELECT id FROM accounts WHERE account_number = ?'
-      ).get(accountNumber);
-      
-      if (existingAccount) {
-        accountId = existingAccount.id;
-        console.log(`✅ Account found: ${accountId} (${accountNumber})`);
-      } else {
-        // Create new account
-        accountId = `acc_${Date.now()}`;
-        console.log(`✨ Creating new account: ${accountId} (${accountNumber})`);
-        
-        db.prepare(`
-          INSERT INTO accounts (
-            id, account_name, account_number, account_type, currency, is_active, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
-        `).run(
-          accountId,
-          accountInfo.accountName || `Account ${accountNumber}`,
-          accountNumber,
-          accountInfo.accountType || 'checking',
-          accountInfo.currency || 'EUR'
-        );
-        console.log(`✅ Account created: ${accountId}`);
-      }
+    try {
+      db.prepare(`
+        INSERT INTO accounts (
+          id, account_name, account_number, account_type, currency, 
+          opening_balance, current_balance, is_active, 
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 0, 0, 1, datetime('now'), datetime('now'))
+      `).run(
+        accountId,
+        accountInfo.accountName || `Account ${accountNumber}`,
+        accountNumber,
+        accountInfo.accountType || 'checking',
+        accountInfo.currency || 'EUR'
+      );
+      console.log(`✅ Account created: ${accountId}`);
+    } catch (insertError) {
+      console.error('⚠️ Account creation failed:', insertError.message);
+      console.log('ℹ️ Using default account instead');
+      accountId = 'acc_default_001';
     }
+  }
+} else {
+  console.log('ℹ️ No valid account number - using default account');
+}
 
     // Step 2: Ensure upload record exists
     const uploadExists = db.prepare('SELECT id FROM uploads WHERE id = ?').get(uploadId);
@@ -77,13 +88,15 @@ async function insertTransactions(transactions, uploadId, accountInfo = {}) {
     const processedTransactions = transactions.map((txn) => ({
       id: uuidv4(),
       uploadId,
-      account_id: accountId,  // ← Use detected/created account
-      date: txn.date || new Date().toISOString().split('T'),
-      description: txn.description || '',
-      amount: txn.amount || 0,
-      type: txn.type || 'DEBIT',
+      account_id: accountId,
+      date: txn.date || new Date().toISOString().split('T')[0],
+      description: (txn.description || '').substring(0, 500),  // Limit length
+      amount: parseFloat(txn.amount) || 0,  // Ensure number
+      type: (txn.type === 'CREDIT' || txn.type === 'DEBIT') ? txn.type : 'DEBIT',  // Validate
       categoryCode: txn.categoryCode || 'UNCATEGORIZED_IN',
-      confidence: txn.confidence || 0.5,
+      confidence: Math.min(1, Math.max(0, parseFloat(txn.confidence) || 0.5)),  // Clamp 0-1
+      reasoning: (txn.reasoning || '').substring(0, 1000),  // Limit length
+      counterparty: (txn.counterparty || '').substring(0, 255),  // Limit length      confidence: txn.confidence || 0.5,
       reasoning: txn.reasoning || '',
       counterparty: txn.counterparty || '',
       reconciled: 0,
@@ -117,17 +130,25 @@ async function insertTransactions(transactions, uploadId, accountInfo = {}) {
 
     // Step 4: Create ledger entries
     console.log('📝 Creating ledger entries...');
+    const { createLedgerEntry } = require('./ledgerService');
+    
+    let ledgerCount = 0;  // ← ADD THIS
     for (const txn of processedTransactions) {
       try {
         await createLedgerEntry(txn, accountId);
+        ledgerCount++;  // ← ADD THIS
       } catch (e) {
         console.error('⚠️ Error creating ledger entry:', e.message);
       }
     }
-    console.log('✅ All ledger entries created');
+    console.log(`✅ Created ${ledgerCount} ledger entries`);  // ← UPDATE THIS
+        
+    return { 
+      accountId, 
+      transactionCount: processedTransactions.length,
+      ledgerEntriesCount: ledgerCount  // if you have ledger creation
+    };
     
-    return { accountId, transactionCount: processedTransactions.length };
-
   } catch (error) {
     console.error('❌ Error:', error.message);
     db.pragma('foreign_keys = ON');
@@ -275,6 +296,7 @@ async function getCategoryBreakdown(filters = {}) {
 
 
 module.exports = {
+  getDatabase,
   insertTransactions,
   getTransactions,
   updateTransaction,

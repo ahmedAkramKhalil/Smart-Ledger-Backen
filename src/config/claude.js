@@ -22,7 +22,7 @@ function parseClaudeResponse(content) {
 
     console.log(`   Cleaned: ${cleanContent.length} chars`);
 
-    // Try direct parse
+    // Try direct parse first
     try {
       const result = JSON.parse(cleanContent);
       console.log('✅ JSON parsed successfully');
@@ -36,7 +36,7 @@ function parseClaudeResponse(content) {
         throw new Error('No JSON object found');
       }
 
-      let jsonStr = match;
+      let jsonStr = match[0];  // ✅ FIX: Get first array element
 
       // Repair if truncated
       const openBraces = (jsonStr.match(/\{/g) || []).length;
@@ -54,6 +54,9 @@ function parseClaudeResponse(content) {
     throw error;
   }
 }
+
+
+
 
 // Analyze bank statement
 async function analyzeRawData(rawData) {
@@ -116,7 +119,7 @@ Return ONLY this JSON - NO explanations:
       CLAUDE_API_URL,
       {
         model: CLAUDE_MODEL,
-        max_tokens: 4096,
+        max_tokens: 8000,
         temperature: 0.3,
         messages: [
           {
@@ -150,11 +153,12 @@ Return ONLY this JSON - NO explanations:
       throw new Error('Empty content array');
     }
 
-    if (!response.data.content.text) {
+    if (!response.data.content[0] || !response.data.content[0].text) {
       throw new Error('No text in content');
     }
-
-    const content = response.data.content.text;
+    
+    const content = response.data.content[0].text;
+    
     console.log(`✅ Received text: ${content.length} chars`);
     console.log(`   First 100: ${content.substring(0, 100)}`);
 

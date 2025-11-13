@@ -112,14 +112,31 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
     console.log(`✅ Found ${analysisResult.transactions.length} transactions`);
 
-    // Store in database
-    await insertTransactions(analysisResult.transactions, uploadId);
+    // Extract account info from Claude response
+    const accountInfo = {
+      accountNumber: analysisResult.account?.accountNumber || 'UNKNOWN',
+      accountName: analysisResult.account?.accountName || 'Unknown Account',
+      accountType: analysisResult.account?.accountType || 'checking',
+      currency: analysisResult.account?.currency || 'EUR'
+    };
+    
+    console.log(`📋 Account detected: ${accountInfo.accountNumber}`);
+    
+    // Store in database with account linking
+    const insertResult = await insertTransactions(
+      analysisResult.transactions, 
+      uploadId,
+      accountInfo
+    );
 
+    
     console.log('💾 Stored in database');
 
     res.json({
       success: true,
       uploadId,
+      accountId: insertResult.accountId,  
+      accountNumber: accountInfo.accountNumber,  
       transactionCount: analysisResult.transactions.length,
       analysis: analysisResult.analysis,
       summary: analysisResult.summary,
