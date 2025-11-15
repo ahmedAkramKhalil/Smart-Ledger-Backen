@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const { getDatabase } = require('../services/transactionService'); // ADD THIS LINE IF MISSING
+
 const {
   getIncomeExpensesSummary,
   getCashFlowReport,
@@ -16,6 +18,12 @@ const {
   predictNextTransaction
 } = require('../services/analyticsService');
 
+
+
+
+
+
+
 // Income & Expenses
 router.get('/income-expenses', async (req, res) => {
   try {
@@ -25,6 +33,56 @@ router.get('/income-expenses', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+
+
+
+router.get('/date-range', async (req, res) => {
+  try {
+    const db = getDatabase();
+    
+    const query = `
+      SELECT 
+        MIN(date) as min_date,
+        MAX(date) as max_date,
+        COUNT(*) as total_transactions
+      FROM transactions
+    `;
+    
+    const result = db.prepare(query).get();
+    
+    if (!result || !result.min_date) {
+      return res.json({
+        success: true,
+        hasData: false,
+        min_date: null,
+        max_date: null,
+        total_transactions: 0
+      });
+    }
+    
+    // Get the last month with data
+    const maxDate = new Date(result.max_date);
+    const lastMonthStart = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1);
+    const lastMonthEnd = new Date(maxDate.getFullYear(), maxDate.getMonth() + 1, 0);
+    
+    res.json({
+      success: true,
+      hasData: true,
+      min_date: result.min_date,
+      max_date: result.max_date,
+      total_transactions: result.total_transactions,
+      suggested_start: lastMonthStart.toISOString().split('T')[0],
+      suggested_end: lastMonthEnd.toISOString().split('T')[0]
+    });
+    
+  } catch (error) {
+    console.error('Error getting date range:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 
 // Cash Flow
 router.get('/cash-flow', async (req, res) => {

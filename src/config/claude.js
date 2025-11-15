@@ -72,7 +72,7 @@ async function analyzeRawData(rawData) {
 
     // Take 20%
     const totalLength = rawData.length;
-    const twentyPercent = Math.floor(totalLength * 0.2);
+    const twentyPercent = Math.floor(totalLength * 0.5);
     const sampleData = rawData.substring(0, twentyPercent).trim();
 
     console.log(`📊 File: ${totalLength} bytes`);

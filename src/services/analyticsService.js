@@ -155,7 +155,7 @@ async function predictNextTransaction(categoryCode) {
         t.date,
         ROW_NUMBER() OVER (ORDER BY t.date DESC) as recency
       FROM transactions t
-      WHERE t.category_code = ?
+      WHERE t.categoryCode = ?
       ORDER BY t.date DESC
       LIMIT 5
     `;
