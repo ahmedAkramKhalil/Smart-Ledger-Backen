@@ -70,14 +70,14 @@ async function analyzeRawData(rawData) {
     // Take 50% sample (up to 20KB)
     const totalLength = rawData.length;
     const maxSize = 20000; // 20KB limit
-    const sampleSize = Math.min(Math.floor(totalLength * 0.5), maxSize);
+    const sampleSize = Math.min(Math.floor(totalLength * 0.6), maxSize);
     const sampleData = rawData.substring(0, sampleSize).trim();
 
     console.log(`📊 File: ${totalLength} bytes`);
     console.log(`📊 Sample: ${sampleData.length} bytes`);
 
     // Enhanced Prompt with EXACT database categories and predictions
-    const prompt = `You are a financial analyst AI. Extract up to 50 transactions from this Greek bank statement and provide predictions.
+    const prompt = `You are a financial analyst AI. Extract up to 100 transactions from this Greek bank statement and provide predictions.
 
 CRITICAL RULES:
 1. Use ONLY these category codes (match EXACTLY):
