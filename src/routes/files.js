@@ -141,7 +141,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     console.log(`💾 Storing ${transactions.length} transactions...`);
 
     const insertTxn = db.prepare(`
-      INSERT INTO transactions 
+      INSERT OR REPLACE INTO transactions 
       (id, uploadId, account_id, date, description, amount, type, categoryCode, confidence, reasoning, counterparty, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `);

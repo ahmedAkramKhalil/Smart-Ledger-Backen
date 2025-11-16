@@ -105,7 +105,7 @@ if (accountNumber && accountNumber !== 'UNKNOWN' && accountNumber !== '') {
     }));
 
     const insertStmt = db.prepare(`
-      INSERT INTO transactions (
+      INSERT OR REPLACE INTO transactions (
         id, uploadId, account_id, date, description, amount, type,
         categoryCode, confidence, reasoning, counterparty, reconciled,
         created_at, updated_at
