@@ -137,32 +137,92 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     }
 
     // Step 4: Store transactions
-    const transactions = analysis.transactions || [];
-    console.log(`💾 Storing ${transactions.length} transactions...`);
+// Step 4: Store transactions
+const transactions = analysis.transactions || [];
+console.log(`💾 Storing ${transactions.length} transactions...`);
 
-    const insertTxn = db.prepare(`
-      INSERT OR REPLACE INTO transactions 
-      (id, uploadId, account_id, date, description, amount, type, categoryCode, confidence, reasoning, counterparty, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-    `);
+const insertTxn = db.prepare(`
+  INSERT OR REPLACE INTO transactions 
+  (id, uploadId, account_id, date, description, amount, type, categoryCode, confidence, reasoning, counterparty, created_at, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+`);
 
-    transactions.forEach((txn) => {
-      insertTxn.run(
-        txn.id || 'txn_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-        uploadId,
-        'acc_default_001',
-        txn.date,
-        txn.description,
-        txn.amount,
-        txn.type,
-        txn.categoryCode,
-        txn.confidence || 0.5,
-        txn.reasoning || '',
-        txn.counterparty || ''
-      );
-    });
+transactions.forEach((txn) => {
+  insertTxn.run(
+    txn.id || 'txn_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+    uploadId,
+    'acc_default_001',
+    txn.date,
+    txn.description,
+    txn.amount,
+    txn.type,
+    txn.categoryCode,
+    txn.confidence || 0.5,
+    txn.reasoning || '',
+    txn.counterparty || ''
+  );
+});
 
-    console.log('✅ Transactions stored');
+console.log('✅ Transactions stored');
+
+// ⭐ CREATE LEDGER ENTRIES ⭐
+console.log('💾 Creating ledger entries...');
+
+// Sort transactions by date to calculate running balance
+const sortedTransactions = transactions.sort((a, b) => 
+  new Date(a.date) - new Date(b.date)
+);
+
+// Get current account balance
+const account = db.prepare('SELECT balance FROM accounts WHERE id = ?').get('acc_default_001');
+let runningBalance = account ? account.balance : 0;
+
+const insertLedger = db.prepare(`
+  INSERT OR REPLACE INTO ledger_entries 
+  (id, account_id, transaction_id, date, description, debit, credit, balance, created_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+`);
+
+sortedTransactions.forEach((txn, index) => {
+  const ledgerId = 'led_' + Date.now() + '_' + index + '_' + Math.random().toString(36).substr(2, 9);
+  
+  // Determine debit/credit based on transaction type and amount
+  let debit = 0;
+  let credit = 0;
+  
+  if (txn.type === 'CREDIT' || txn.amount > 0) {
+    credit = Math.abs(txn.amount);
+    runningBalance += credit;
+  } else {
+    debit = Math.abs(txn.amount);
+    runningBalance -= debit;
+  }
+  
+  insertLedger.run(
+    ledgerId,
+    'acc_default_001',
+    txn.id || 'txn_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+    txn.date,
+    txn.description,
+    debit,
+    credit,
+    runningBalance
+  );
+});
+
+console.log(`✅ Created ${sortedTransactions.length} ledger entries`);
+
+// Update account balance
+db.prepare(`
+  UPDATE accounts 
+  SET balance = ?,
+      transaction_count = transaction_count + ?,
+      updated_at = datetime('now')
+  WHERE id = ?
+`).run(runningBalance, transactions.length, 'acc_default_001');
+
+console.log(`✅ Account balance updated to: ${runningBalance}`);
+
 
     // Step 5: Store predictions
     if (analysis.predictions) {
