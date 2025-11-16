@@ -172,3 +172,44 @@ INSERT OR IGNORE INTO categories (code, name_en, name_el, type) VALUES
 -- Default Account
 INSERT OR IGNORE INTO accounts (id, account_name, account_number, account_type, currency, opening_balance, current_balance, is_active) 
 VALUES ('acc_default_001', 'Main Business Account', 'GR0000000000000000000000', 'checking', 'EUR', 0, 0, 1);
+
+
+
+
+-- ========================================
+-- PREDICTIONS TABLES
+-- ========================================
+
+-- Recurring Predictions
+CREATE TABLE IF NOT EXISTS recurring_predictions (
+  id TEXT PRIMARY KEY,
+  description TEXT NOT NULL,
+  categoryCode TEXT NOT NULL,
+  type TEXT NOT NULL CHECK(type IN ('CREDIT', 'DEBIT')),
+  avg_amount REAL NOT NULL,
+  frequency TEXT,
+  confidence REAL DEFAULT 0.5,
+  next_expected_date TEXT,
+  occurrence_count INTEGER DEFAULT 0,
+  last_occurrence TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (categoryCode) REFERENCES categories(code) ON DELETE CASCADE
+);
+
+-- Cash Flow Forecasts
+CREATE TABLE IF NOT EXISTS cash_flow_forecasts (
+  id TEXT PRIMARY KEY,
+  month TEXT NOT NULL,
+  predicted_income REAL DEFAULT 0,
+  predicted_expenses REAL DEFAULT 0,
+  net_flow REAL DEFAULT 0,
+  confidence REAL DEFAULT 0.5,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(month)
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_recurring_category ON recurring_predictions(categoryCode);
+CREATE INDEX IF NOT EXISTS idx_recurring_type ON recurring_predictions(type);
+CREATE INDEX IF NOT EXISTS idx_forecast_month ON cash_flow_forecasts(month);

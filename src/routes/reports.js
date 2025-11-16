@@ -189,4 +189,57 @@ router.get('/predictions/:categoryCode', async (req, res) => {
   }
 });
 
+
+
+// Get recurring predictions from database
+router.get('/recurring', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const { minOccurrences = 2 } = req.query;
+    
+    const query = `
+      SELECT 
+        rp.*,
+        c.name_en,
+        c.name_el
+      FROM recurring_predictions rp
+      LEFT JOIN categories c ON rp.categoryCode = c.code
+      WHERE rp.occurrence_count >= ?
+      ORDER BY rp.avg_amount DESC
+    `;
+    
+    const predictions = db.prepare(query).all(minOccurrences);
+    
+    console.log(`✅ Retrieved ${predictions.length} recurring predictions`);
+    res.json(predictions);
+  } catch (error) {
+    console.error('Error fetching recurring predictions:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get cash flow forecast from database
+router.get('/forecast/cash-flow', async (req, res) => {
+  try {
+    const db = getDatabase();
+    const { months = 3 } = req.query;
+    
+    const query = `
+      SELECT *
+      FROM cash_flow_forecasts
+      ORDER BY month ASC
+      LIMIT ?
+    `;
+    
+    const forecasts = db.prepare(query).all(parseInt(months));
+    
+    console.log(`✅ Retrieved ${forecasts.length} forecast months`);
+    res.json(forecasts);
+  } catch (error) {
+    console.error('Error fetching forecasts:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
 module.exports = router;

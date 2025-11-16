@@ -55,6 +55,8 @@ const categoryRoutes = require('./routes/categories');
 const reportRoutes = require('./routes/reports');
 const exportRoutes = require('./routes/export');
 const accountsRouter = require('./routes/accounts');
+const categoriesRouter = require('./routes/categories'); // NEW
+
 
 app.use('/api/auth', authRoutes);
 app.use('/api/transactions', transactionRoutes);
@@ -63,6 +65,8 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/export', exportRoutes);
 app.use('/api/accounts', accountsRouter);
+app.use('/api/categories', categoriesRouter); // NEW
+app.use('/api/uploads', fileRoutes); // ADD THIS LINE
 
 // ========================================
 // HEALTH CHECK

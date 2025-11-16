@@ -36,7 +36,7 @@ function parseClaudeResponse(content) {
         throw new Error('No JSON object found');
       }
 
-      let jsonStr = match[0];  // ✅ FIX: Get first array element
+      let jsonStr = match[0];
 
       // Repair if truncated
       const openBraces = (jsonStr.match(/\{/g) || []).length;
@@ -55,71 +55,143 @@ function parseClaudeResponse(content) {
   }
 }
 
-
-
-
 // Analyze bank statement
 async function analyzeRawData(rawData) {
   try {
     // Validate
     if (!CLAUDE_API_KEY) {
-      throw new Error('CLAUDE_API_KEY not set');
+      throw new Error('CLAUDE_API_KEY not set in environment');
     }
 
     if (!rawData || typeof rawData !== 'string' || rawData.trim().length === 0) {
       throw new Error('Invalid input data');
     }
 
-    // Take 20%
+    // Take 50% sample (up to 20KB)
     const totalLength = rawData.length;
-    const twentyPercent = Math.floor(totalLength * 0.5);
-    const sampleData = rawData.substring(0, twentyPercent).trim();
+    const maxSize = 20000; // 20KB limit
+    const sampleSize = Math.min(Math.floor(totalLength * 0.5), maxSize);
+    const sampleData = rawData.substring(0, sampleSize).trim();
 
     console.log(`📊 File: ${totalLength} bytes`);
-    console.log(`📊 Sample: ${sampleData.length} bytes (20%)`);
+    console.log(`📊 Sample: ${sampleData.length} bytes`);
 
-    // Prompt
-    const prompt = `Extract up to 50 transactions from this bank statement.
+    // Enhanced Prompt with EXACT database categories and predictions
+    const prompt = `You are a financial analyst AI. Extract up to 50 transactions from this Greek bank statement and provide predictions.
 
-DATA:
+CRITICAL RULES:
+1. Use ONLY these category codes (match EXACTLY):
+
+INCOME (CREDIT):
+- INVOICE_PAYMENT_FULL: Full invoice payment received
+- INVOICE_PAYMENT_PARTIAL: Partial invoice payment received
+- CAPITAL_RAISE: Capital increase from shareholders
+- INTEREST_INCOME: Bank interest earned
+- EXPENSE_REFUND: Refund of previously paid expenses
+- LOAN_RECEIVED: Loan funds received
+- INTERCOMPANY_IN: Transfer from related company
+- ATM_DEPOSIT: Cash deposited via ATM
+- UNCATEGORIZED_IN: Unknown income source
+
+EXPENSES (DEBIT):
+- SUPPLIER_PAYMENT: Payment to supplier/vendor
+- LOAN_REPAYMENT: Loan principal or interest payment
+- BANK_FEES: Bank charges and fees
+- TAX_PAYMENT: Tax payments (VAT, income tax, etc)
+- PAYROLL: Employee salaries and wages
+- RENT: Office/property rent payment
+- UTILITIES: Electricity, water, internet, phone
+- ADMIN_EXPENSES: Office supplies, admin costs
+- ATM_WITHDRAWAL: Cash withdrawn from ATM
+
+2. Keep Greek text in descriptions (don't translate)
+3. Amounts: positive for CREDIT, negative for DEBIT
+4. Confidence: 0.0 to 1.0 based on certainty
+5. Predict recurring patterns and next 3 months forecast
+
+BANK STATEMENT DATA:
 ${sampleData}
 
-Return ONLY this JSON - NO explanations:
+Return ONLY this JSON structure (NO markdown, NO explanations):
 
 {
   "isFinancialData": true,
   "account": {
     "accountNumber": "GR1234567890",
-    "accountName": "Account",
+    "accountName": "Business Account",
     "currency": "EUR"
   },
   "transactions": [
     {
       "id": "txn_001",
-      "date": "2025-11-08",
-      "description": "Transaction",
-      "amount": 1000,
+      "date": "2024-11-08",
+      "description": "ΠΛΗΡΩΜΗ ΤΙΜΟΛΟΓΙΟΥ ΑΠΟ ΠΕΛΑΤΗ",
+      "amount": 1500.50,
       "type": "CREDIT",
       "categoryCode": "INVOICE_PAYMENT_FULL",
-      "confidence": 0.9
+      "confidence": 0.95,
+      "counterparty": "CUSTOMER NAME",
+      "reasoning": "Matching invoice payment pattern"
     }
   ],
+  "predictions": {
+    "recurring": [
+      {
+        "description": "ΜΙΣΘΟΔΟΣΙΑ",
+        "categoryCode": "PAYROLL",
+        "type": "DEBIT",
+        "avgAmount": -5000,
+        "frequency": "monthly",
+        "confidence": 0.9,
+        "nextExpectedDate": "2024-12-01",
+        "occurrenceCount": 3
+      }
+    ],
+    "forecast": [
+      {
+        "month": "2024-12",
+        "predictedIncome": 25000,
+        "predictedExpenses": -18000,
+        "netFlow": 7000,
+        "confidence": 0.75
+      },
+      {
+        "month": "2025-01",
+        "predictedIncome": 26000,
+        "predictedExpenses": -19000,
+        "netFlow": 7000,
+        "confidence": 0.65
+      },
+      {
+        "month": "2025-02",
+        "predictedIncome": 27000,
+        "predictedExpenses": -20000,
+        "netFlow": 7000,
+        "confidence": 0.55
+      }
+    ]
+  },
   "summary": {
     "totalTransactions": 1,
-    "creditTotal": 1000,
+    "creditTotal": 1500.50,
     "debitTotal": 0,
-    "netCashFlow": 1000
-  }
+    "netCashFlow": 1500.50,
+    "dateRange": {
+      "from": "2024-11-01",
+      "to": "2024-11-30"
+    }
+  },
+  "analysis": "Detected 1 transactions with high confidence categorization"
 }`;
 
-    console.log('📨 Calling Claude...');
+    console.log('📨 Calling Claude API...');
 
     // Call Claude
     const response = await axios.post(
       CLAUDE_API_URL,
       {
         model: CLAUDE_MODEL,
-        max_tokens: 8000,
+        max_tokens: 12000,
         temperature: 0.3,
         messages: [
           {
@@ -134,13 +206,13 @@ Return ONLY this JSON - NO explanations:
           'anthropic-version': '2023-06-01',
           'content-type': 'application/json'
         },
-        timeout: 60000
+        timeout: 90000
       }
     );
 
     console.log('✅ Got response from Claude');
 
-    // FIXED: Check response structure correctly
+    // Validate response structure
     if (!response || !response.data) {
       throw new Error('No response data');
     }
@@ -160,9 +232,8 @@ Return ONLY this JSON - NO explanations:
     const content = response.data.content[0].text;
     
     console.log(`✅ Received text: ${content.length} chars`);
-    console.log(`   First 100: ${content.substring(0, 100)}`);
 
-    // Parse
+    // Parse response
     const result = parseClaudeResponse(content);
 
     // Validate
@@ -176,6 +247,8 @@ Return ONLY this JSON - NO explanations:
     }
 
     console.log(`✅ Success: ${result.transactions.length} transactions`);
+    console.log(`✅ Predictions: ${result.predictions?.recurring?.length || 0} recurring, ${result.predictions?.forecast?.length || 0} forecasts`);
+    
     return result;
 
   } catch (error) {
@@ -189,6 +262,7 @@ Return ONLY this JSON - NO explanations:
   }
 }
 
+// CRITICAL: Export the function
 module.exports = {
   analyzeRawData
 };
